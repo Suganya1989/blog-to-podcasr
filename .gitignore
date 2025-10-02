@@ -3,3 +3,19 @@ __pycache__/
 *.pyc
 audio/
 *.mp3
+
+# Dependencies
+node_modules/
+
+# Generated files
+extracted_content.json
+extracted_pdf_content.json
+analysis.json
+podcast_plan.json
+generate_audio.py
+
+# Temporary files
+nul
+
+# Local settings
+.claude/settings.local.json

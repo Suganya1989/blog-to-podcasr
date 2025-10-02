@@ -1,0 +1,94 @@
+name: Blog to Podcast Conversion
+
+on:
+  workflow_dispatch:
+    inputs:
+      blog_url:
+        description: 'Blog URL to convert'
+        required: true
+        type: string
+      voice:
+        description: 'Voice to use (alloy, echo, fable, onyx, nova, shimmer)'
+        required: false
+        default: 'alloy'
+        type: choice
+        options:
+          - alloy
+          - echo
+          - fable
+          - onyx
+          - nova
+          - shimmer
+
+  issues:
+    types: [opened, labeled]
+
+jobs:
+  convert-blog-to-podcast:
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'podcast'))
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Extract URL from issue (if triggered by issue)
+        if: github.event_name == 'issues'
+        id: extract-url
+        run: |
+          ISSUE_BODY="${{ github.event.issue.body }}"
+          URL=$(echo "$ISSUE_BODY" | grep -oP 'https?://[^\s]+' | head -1)
+          echo "url=$URL" >> $GITHUB_OUTPUT
+          echo "Found URL: $URL"
+
+      - name: Run Blog to Podcast Pipeline
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            URL="${{ inputs.blog_url }}"
+            VOICE="${{ inputs.voice }}"
+          else
+            URL="${{ steps.extract-url.outputs.url }}"
+            VOICE="alloy"
+          fi
+
+          echo "Converting: $URL with voice: $VOICE"
+          python claude_ai.py "convert this blog to podcast: $URL using voice $VOICE"
+
+      - name: Upload podcast artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: podcast-${{ github.run_number }}
+          path: |
+            audio/podcast.mp3
+            audio/segments/*.mp3
+          retention-days: 30
+
+      - name: Comment on issue with result
+        if: github.event_name == 'issues'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `✅ Podcast created successfully!\n\n` +
+                    `🎧 Download from the [Actions artifacts](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})\n\n` +
+                    `Voice: ${{ inputs.voice || 'alloy' }}`
+            });

@@ -1,0 +1,61 @@
+name: Claude Agent Trigger
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  parse-and-execute:
+    runs-on: ubuntu-latest
+    if: |
+      github.event.issue.pull_request == null &&
+      startsWith(github.event.comment.body, '/claude')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Parse command
+        id: parse
+        run: |
+          COMMENT="${{ github.event.comment.body }}"
+          COMMAND=$(echo "$COMMENT" | sed 's/^\/claude //')
+          echo "command=$COMMAND" >> $GITHUB_OUTPUT
+          echo "Parsed command: $COMMAND"
+
+      - name: Execute Claude AI command
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python claude_ai.py "${{ steps.parse.outputs.command }}"
+
+      - name: Upload results
+        uses: actions/upload-artifact@v3
+        with:
+          name: claude-output-${{ github.run_number }}
+          path: |
+            audio/
+          retention-days: 7
+
+      - name: Reply to comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `✅ Claude AI executed successfully!\n\n` +
+                    `Command: \`${{ steps.parse.outputs.command }}\`\n\n` +
+                    `📦 Results available in [Actions artifacts](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`
+            });

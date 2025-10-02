@@ -1,0 +1,56 @@
+name: Scheduled Podcast Generation
+
+on:
+  schedule:
+    # Run every day at 9 AM UTC
+    - cron: '0 9 * * *'
+
+  workflow_dispatch:
+
+jobs:
+  generate-daily-podcast:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Read RSS feed or source list
+        id: get-content
+        run: |
+          # Example: Read URLs from a file
+          if [ -f "podcast_sources.txt" ]; then
+            URL=$(head -n 1 podcast_sources.txt)
+            echo "url=$URL" >> $GITHUB_OUTPUT
+          else
+            echo "No sources found"
+            exit 0
+          fi
+
+      - name: Generate podcast
+        if: steps.get-content.outputs.url != ''
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python claude_ai.py "convert this blog to podcast: ${{ steps.get-content.outputs.url }}"
+
+      - name: Upload to release
+        if: steps.get-content.outputs.url != ''
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: podcast-$(date +%Y%m%d)
+          name: Daily Podcast $(date +%Y-%m-%d)
+          files: |
+            audio/podcast.mp3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
